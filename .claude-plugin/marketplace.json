@@ -5,5 +5,14 @@
     "url": "https://github.com/pcailug"
   },
   "description": "Claude Code plugin 清單（由 CI 掃描 org 自動產生，請勿手改）",
-  "plugins": []
+  "plugins": [
+    {
+      "name": "github-convention",
+      "source": {
+        "source": "github",
+        "repo": "pcailug/github-convention"
+      },
+      "description": "GitHub 作業規範：建 repo、建 Claude Code plugin repo 並自動上架到 org 的 marketplace。含擁有者判斷、命名、撞名（含改名 redirect）、visibility、push 前的祕密與個資掃描、已外流時如何清歷史，以及實測過的 GitHub／Pages／marketplace 細節。"
+    }
+  ]
 }
