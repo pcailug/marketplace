@@ -1,0 +1,55 @@
+# C1 —— 可重用 workflow，給 plugin repo（P）呼叫，通知同一個 org 的 <org>/marketplace（M）重新產生清單。
+#
+# 用法：在 plugin repo 建 .github/workflows/marketplace.yml
+#
+#   name: Register to marketplace
+#   on:
+#     push: { branches: [main], paths: ['.claude-plugin/plugin.json'] }
+#     workflow_dispatch:
+#   jobs:
+#     notify:
+#       uses: <org>/marketplace/.github/workflows/notify.yml@main
+#       secrets: inherit
+#
+# 這個 job 在「P 自己的」執行環境裡跑，只拿得到一個只能對 M 發 repository_dispatch 的 token，
+# 拿不到也不需要任何能改 P 或其他 repo 的權限。
+name: Notify marketplace
+
+on:
+  workflow_call:
+    secrets:
+      MARKETPLACE_DISPATCH_TOKEN:
+        required: false            # 讓缺 secret 時由下面的步驟給出清楚的錯誤訊息
+
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send repository_dispatch to <org>/marketplace
+        env:
+          TOKEN: ${{ secrets.MARKETPLACE_DISPATCH_TOKEN }}
+          SOURCE: ${{ github.repository }}
+          TARGET: ${{ github.repository_owner }}/marketplace
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::MARKETPLACE_DISPATCH_TOKEN 是空的。"
+            echo "  - 它是 org 層級的 secret，這個 repo 必須跟 ${TARGET} 在同一個 org"
+            echo "  - 呼叫端要寫 secrets: inherit"
+            echo "  - 清單仍會由每日排程（03:00）補上"
+            exit 1
+          fi
+          status=$(curl --silent --show-error --output /tmp/resp --write-out '%{http_code}' \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${TARGET}/dispatches" \
+            -d "{\"event_type\":\"plugin-updated\",\"client_payload\":{\"source\":\"${SOURCE}\"}}")
+          if [ "$status" != "204" ]; then
+            echo "::error::通知失敗（HTTP ${status}）。401 = token 過期或錯誤；403/404 = token 沒有 ${TARGET} 的 Contents 寫入權限"
+            cat /tmp/resp
+            exit 1
+          fi
+          echo "已通知 marketplace 重新產生清單"

@@ -1,0 +1,9 @@
+{
+  "name": "pcailug",
+  "owner": {
+    "name": "pcailug",
+    "url": "https://github.com/pcailug"
+  },
+  "description": "Claude Code plugin 清單（由 CI 掃描 org 自動產生，請勿手改）",
+  "plugins": []
+}

@@ -1,0 +1,65 @@
+# C2 —— 重新掃描 org，產生 .claude-plugin/marketplace.json。只在本 repo（M）執行。
+#
+# ⚠️ 刻意沒有 push 觸發：本 job 會 commit 回本 repo，加了 push 就可能自己觸發自己。
+#    另外 GITHUB_TOKEN 產生的 commit 本來就不會觸發 workflow，這是第二層保險。
+name: Regenerate marketplace
+
+on:
+  repository_dispatch:
+    types: [plugin-updated]        # plugin repo 的 C1 通知
+  schedule:
+    - cron: "0 19 * * *"           # 每日 03:00（台北）補上漏掉的通知、封存與改名
+  workflow_dispatch:               # 手動：gh workflow run regenerate.yml -R <org>/marketplace
+
+permissions:
+  contents: write
+
+concurrency:
+  group: regenerate-marketplace
+  cancel-in-progress: false        # 排隊，不要中斷正在 commit 的那一次
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Generate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python gen_marketplace.py > /tmp/marketplace.json
+          mv /tmp/marketplace.json .claude-plugin/marketplace.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate
+        run: |
+          # 清單是空的時 --strict 會把「沒有 plugin」的警告當成錯誤，這時只檢查錯誤
+          count=$(python -c "import json; print(len(json.load(open('.claude-plugin/marketplace.json'))['plugins']))")
+          strict=$([ "$count" -gt 0 ] && echo --strict || true)
+          npx -y @anthropic-ai/claude-code plugin validate . $strict
+
+      - name: Commit if changed
+        env:
+          SOURCE: ${{ github.event.client_payload.source || github.event_name }}
+        run: |
+          if git diff --quiet -- .claude-plugin/marketplace.json; then
+            echo "清單無變更，不 commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .claude-plugin/marketplace.json
+          git commit -m "自動更新 plugin 清單（來源：${SOURCE}）"
+          git push
+          echo "已更新 marketplace.json"
